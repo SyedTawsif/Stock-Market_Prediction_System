@@ -1,0 +1,14 @@
+# Python virtual environments
+venv/
+.venv/
+
+# Byte-compiled files
+__pycache__/
+*.pyc
+
+# Data and model files
+data/
+models/
+
+# VS Code settings
+.vscode/
