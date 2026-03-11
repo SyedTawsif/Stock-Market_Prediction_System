@@ -10,10 +10,11 @@ MODEL_DIR = "models"
 # Create models directory if it doesn't exist
 os.makedirs(MODEL_DIR, exist_ok=True)
 
-# Loop through all CSV files in the data folder
+# Loop through all CSV files in the data folder.
+# Files may be named ticker.csv or ticker_period.csv (e.g. AAPL_1y.csv) when using timeframe-based collection.
 for file_name in os.listdir(DATA_DIR):
     if file_name.endswith(".csv"):
-        ticker = file_name.split(".")[0]
+        ticker = file_name.split(".")[0]  # e.g. "AAPL" or "AAPL_1y"
         file_path = os.path.join(DATA_DIR, file_name)
         print(f"\nTraining model for {ticker}...")
 
