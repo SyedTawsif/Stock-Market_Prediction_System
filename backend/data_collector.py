@@ -7,6 +7,8 @@ import os
 import pandas as pd
 import yfinance as yf
 
+BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_OUT_DIR = os.path.join(BACKEND_DIR, "data")
 
 # Timeframes supported by yfinance (period parameter)
 # See: https://github.com/ranaroussi/yfinance#period
@@ -30,7 +32,7 @@ def download_stock_data(
     ticker: str,
     period: str = DEFAULT_PERIOD,
     interval: str = DEFAULT_INTERVAL,
-    out_dir: str = "data",
+    out_dir: str = DEFAULT_OUT_DIR,
 ) -> str:
     """
     Download historical stock data for a ticker and save as CSV.
@@ -77,7 +79,7 @@ def download_multiple(
     tickers: list[str],
     period: str = DEFAULT_PERIOD,
     interval: str = DEFAULT_INTERVAL,
-    out_dir: str = "data",
+    out_dir: str = DEFAULT_OUT_DIR,
 ) -> list[str]:
     """Download data for multiple tickers with the same period. Returns list of saved paths."""
     paths = []
@@ -113,8 +115,8 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--out-dir",
-        default="data",
-        help="Output directory for CSV files (default: data)",
+        default=DEFAULT_OUT_DIR,
+        help="Output directory for CSV files (default: backend/data)",
     )
     args = parser.parse_args()
 
