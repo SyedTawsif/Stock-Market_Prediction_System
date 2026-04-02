@@ -22,102 +22,77 @@ export interface StockStats {
   avgPrice: number;
 }
 
-// Generate realistic historical data
-const generateHistoricalData = (
-  basePrice: number,
-  days: number,
-  volatility: number
-): HistoricalDataPoint[] => {
-  const data: HistoricalDataPoint[] = [];
-  const today = new Date();
-  
-  for (let i = days; i >= 0; i--) {
-    const date = new Date(today);
-    date.setDate(date.getDate() - i);
-    
-    const randomChange = (Math.random() - 0.5) * volatility;
-    const actual = basePrice + randomChange;
-    
-    // Add predicted values for recent data (last 30 days)
-    const predicted = i <= 30 ? actual + (Math.random() - 0.5) * (volatility * 0.3) : undefined;
-    
-    data.push({
-      date: date.toISOString().split('T')[0],
-      actual: parseFloat(actual.toFixed(2)),
-      predicted: predicted ? parseFloat(predicted.toFixed(2)) : undefined,
-    });
-    
-    basePrice = actual;
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000';
+
+const STOCK_NAMES: Record<string, string> = {
+  AAPL: 'Apple Inc.',
+  MSFT: 'Microsoft Corporation',
+  GOOGL: 'Alphabet Inc.',
+};
+
+interface BackendStockResponse {
+  symbol: string;
+  name: string;
+  current_price: number;
+  predicted_price: number;
+  change_percent: number;
+  model: string;
+  metrics: { mse: number | null; mae: number | null };
+  historical_data: HistoricalDataPoint[];
+  stats: {
+    mse: number;
+    highest: number;
+    lowest: number;
+    trend: 'bullish' | 'bearish' | 'neutral';
+    avg_price: number;
+  };
+}
+
+const toStockData = (payload: BackendStockResponse): StockData => ({
+  symbol: payload.symbol,
+  name: STOCK_NAMES[payload.symbol] ?? payload.name ?? payload.symbol,
+  currentPrice: payload.current_price,
+  predictedPrice: payload.predicted_price,
+  percentageChange: payload.change_percent,
+  historicalData: payload.historical_data,
+  stats: {
+    mse: payload.metrics.mse ?? payload.stats.mse ?? 0,
+    highest: payload.stats.highest,
+    lowest: payload.stats.lowest,
+    trend: payload.stats.trend,
+    avgPrice: payload.stats.avg_price,
+  },
+});
+
+export const getStockBySymbol = async (symbol: string): Promise<StockData | undefined> => {
+  const response = await fetch(`${API_BASE_URL}/api/stocks/${symbol}?model=linear`);
+  if (response.status === 404) {
+    return undefined;
   }
-  
-  return data;
+  if (!response.ok) {
+    throw new Error(`Failed to fetch stock ${symbol}`);
+  }
+  const payload = (await response.json()) as BackendStockResponse;
+  return toStockData(payload);
 };
 
-// Calculate statistics
-const calculateStats = (data: HistoricalDataPoint[]): StockStats => {
-  const prices = data.map(d => d.actual);
-  const highest = Math.max(...prices);
-  const lowest = Math.min(...prices);
-  const avgPrice = prices.reduce((a, b) => a + b, 0) / prices.length;
-  
-  // Calculate MSE for last 30 days where we have predictions
-  const recentData = data.filter(d => d.predicted !== undefined);
-  const mse = recentData.length > 0
-    ? recentData.reduce((sum, d) => sum + Math.pow(d.actual - (d.predicted || 0), 2), 0) / recentData.length
-    : 0;
-  
-  // Determine trend based on recent price movements
-  const recentPrices = prices.slice(-10);
-  const firstHalf = recentPrices.slice(0, 5).reduce((a, b) => a + b, 0) / 5;
-  const secondHalf = recentPrices.slice(-5).reduce((a, b) => a + b, 0) / 5;
-  const trend = secondHalf > firstHalf * 1.02 ? 'bullish' : secondHalf < firstHalf * 0.98 ? 'bearish' : 'neutral';
-  
-  return {
-    mse: parseFloat(mse.toFixed(4)),
-    highest: parseFloat(highest.toFixed(2)),
-    lowest: parseFloat(lowest.toFixed(2)),
-    trend,
-    avgPrice: parseFloat(avgPrice.toFixed(2)),
-  };
-};
+export const getAllStocks = async (): Promise<StockData[]> => {
+  const listResponse = await fetch(`${API_BASE_URL}/api/stocks`);
+  if (!listResponse.ok) {
+    throw new Error('Failed to fetch stock list');
+  }
 
-// Generate mock stock data
-const createStockData = (
-  symbol: string,
-  name: string,
-  basePrice: number,
-  volatility: number
-): StockData => {
-  const historicalData = generateHistoricalData(basePrice, 90, volatility);
-  const currentPrice = historicalData[historicalData.length - 1].actual;
-  const predictedPrice = currentPrice * (1 + (Math.random() - 0.5) * 0.05);
-  const percentageChange = ((predictedPrice - currentPrice) / currentPrice) * 100;
-  
-  return {
-    symbol,
-    name,
-    currentPrice: parseFloat(currentPrice.toFixed(2)),
-    predictedPrice: parseFloat(predictedPrice.toFixed(2)),
-    percentageChange: parseFloat(percentageChange.toFixed(2)),
-    historicalData,
-    stats: calculateStats(historicalData),
-  };
-};
+  const symbols = (await listResponse.json()) as string[];
+  const stockRequests = symbols.map((symbol) =>
+    fetch(`${API_BASE_URL}/api/stocks/${symbol}?model=linear`)
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`Failed to fetch stock details for ${symbol}`);
+        }
+        return (await response.json()) as BackendStockResponse;
+      })
+      .then(toStockData)
+  );
 
-// Mock stock data
-export const mockStocks: StockData[] = [
-  createStockData('AAPL', 'Apple Inc.', 178, 8),
-  createStockData('MSFT', 'Microsoft Corporation', 372, 12),
-  createStockData('GOOGL', 'Alphabet Inc.', 140, 6),
-  createStockData('AMZN', 'Amazon.com Inc.', 152, 10),
-  createStockData('TSLA', 'Tesla Inc.', 242, 18),
-  createStockData('META', 'Meta Platforms Inc.', 345, 14),
-];
-
-export const getStockBySymbol = (symbol: string): StockData | undefined => {
-  return mockStocks.find(stock => stock.symbol === symbol);
-};
-
-export const getAllStocks = (): StockData[] => {
-  return mockStocks;
+  return Promise.all(stockRequests);
 };

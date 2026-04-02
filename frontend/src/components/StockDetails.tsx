@@ -1,7 +1,8 @@
+import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router';
 import { ArrowLeft, Download, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { getStockBySymbol } from '../utils/mockData';
+import { getStockBySymbol, type StockData } from '../utils/mockData';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
@@ -16,8 +17,55 @@ import {
 
 export function StockDetails() {
   const { symbol } = useParams<{ symbol: string }>();
-  const stock = symbol ? getStockBySymbol(symbol) : undefined;
-  
+  const [stock, setStock] = useState<StockData | undefined>();
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!symbol) {
+      setIsLoading(false);
+      return;
+    }
+
+    let isMounted = true;
+    getStockBySymbol(symbol)
+      .then((data) => {
+        if (!isMounted) return;
+        setStock(data);
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setError('Unable to load stock details from backend API.');
+      })
+      .finally(() => {
+        if (!isMounted) return;
+        setIsLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [symbol]);
+
+  if (isLoading) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-gray-500">Loading stock details...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-red-600 mb-4">{error}</p>
+        <Link to="/">
+          <Button>Back to Dashboard</Button>
+        </Link>
+      </div>
+    );
+  }
+
   if (!stock) {
     return (
       <div className="text-center py-12">
@@ -48,12 +96,12 @@ export function StockDetails() {
     ].join('\n');
     
     const blob = new Blob([csv], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
+    const url = globalThis.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `${stock.symbol}_historical_data.csv`;
     a.click();
-    window.URL.revokeObjectURL(url);
+    globalThis.URL.revokeObjectURL(url);
   };
   
   const getTrendIcon = () => {
@@ -205,12 +253,12 @@ export function StockDetails() {
                           {data.predicted ? `$${data.predicted.toFixed(2)}` : 'N/A'}
                         </TableCell>
                         <TableCell>
-                          {diff !== null ? (
+                          {diff === null ? (
+                            'N/A'
+                          ) : (
                             <span className={diff >= 0 ? 'text-green-600' : 'text-red-600'}>
                               {diff >= 0 ? '+' : ''}${diff.toFixed(2)}
                             </span>
-                          ) : (
-                            'N/A'
                           )}
                         </TableCell>
                       </TableRow>

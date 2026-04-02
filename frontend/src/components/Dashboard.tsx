@@ -1,12 +1,35 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { StockCard } from './StockCard';
-import { getAllStocks } from '../utils/mockData';
+import { getAllStocks, type StockData } from '../utils/mockData';
 import { Search, Brain } from 'lucide-react';
 import { Input } from './ui/input';
 
 export function Dashboard() {
-  const stocks = getAllStocks();
+  const [stocks, setStocks] = useState<StockData[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    let isMounted = true;
+    getAllStocks()
+      .then((data) => {
+        if (!isMounted) return;
+        setStocks(data);
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setError('Unable to load stocks from backend API.');
+      })
+      .finally(() => {
+        if (!isMounted) return;
+        setIsLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
   
   // In a real app, this would come from global state or context
   const currentModel = 'Linear Regression';
@@ -19,7 +42,9 @@ export function Dashboard() {
   // Calculate summary stats
   const totalStocks = stocks.length;
   const positiveChanges = stocks.filter(s => s.percentageChange > 0).length;
-  const avgChange = stocks.reduce((sum, s) => sum + s.percentageChange, 0) / stocks.length;
+  const avgChange = stocks.length > 0
+    ? stocks.reduce((sum, s) => sum + s.percentageChange, 0) / stocks.length
+    : 0;
   
   return (
     <div>
@@ -76,13 +101,27 @@ export function Dashboard() {
       </div>
       
       {/* Stock Grid */}
+      {isLoading && (
+        <div className="text-center py-12">
+          <p className="text-gray-500">Loading stock data...</p>
+        </div>
+      )}
+
+      {error && (
+        <div className="text-center py-12">
+          <p className="text-red-600">{error}</p>
+        </div>
+      )}
+
+      {!isLoading && !error && (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredStocks.map((stock) => (
           <StockCard key={stock.symbol} stock={stock} />
         ))}
       </div>
+      )}
       
-      {filteredStocks.length === 0 && (
+      {!isLoading && !error && filteredStocks.length === 0 && (
         <div className="text-center py-12">
           <p className="text-gray-500">No stocks found matching your search.</p>
         </div>

@@ -1,23 +1,45 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card } from './ui/card';
 import { Button } from './ui/button';
 import { Label } from './ui/label';
 import { Checkbox } from './ui/checkbox';
 import { RadioGroup, RadioGroupItem } from './ui/radio-group';
-import { getAllStocks } from '../utils/mockData';
+import { getAllStocks, type StockData } from '../utils/mockData';
 import { Calendar } from './ui/calendar';
 import { Save, RefreshCw, Brain, CheckCircle2 } from 'lucide-react';
 
 export function Settings() {
-  const allStocks = getAllStocks();
-  const [selectedStocks, setSelectedStocks] = useState<string[]>(
-    allStocks.map(s => s.symbol)
-  );
+  const [allStocks, setAllStocks] = useState<StockData[]>([]);
+  const [selectedStocks, setSelectedStocks] = useState<string[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [startDate, setStartDate] = useState<Date | undefined>(
     new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
   );
   const [endDate, setEndDate] = useState<Date | undefined>(new Date());
   const [selectedModel, setSelectedModel] = useState<string>('linear-regression');
+
+  useEffect(() => {
+    let isMounted = true;
+    getAllStocks()
+      .then((stocks) => {
+        if (!isMounted) return;
+        setAllStocks(stocks);
+        setSelectedStocks(stocks.map((s) => s.symbol));
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setError('Unable to load stocks from backend API.');
+      })
+      .finally(() => {
+        if (!isMounted) return;
+        setIsLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
   
   const handleStockToggle = (symbol: string) => {
     setSelectedStocks(prev =>
@@ -45,6 +67,19 @@ export function Settings() {
     setStartDate(new Date(Date.now() - 90 * 24 * 60 * 60 * 1000));
     setEndDate(new Date());
     setSelectedModel('linear-regression');
+  };
+
+  const getSelectedModelLabel = () => {
+    if (selectedModel === 'linear-regression') {
+      return 'Linear Regression';
+    }
+    if (selectedModel === 'random-forest') {
+      return 'Random Forest';
+    }
+    if (selectedModel === 'lstm') {
+      return 'LSTM Neural Network';
+    }
+    return 'None';
   };
   
   return (
@@ -76,7 +111,6 @@ export function Settings() {
                   ? 'border-blue-600 bg-blue-50'
                   : 'border-gray-200 hover:border-gray-300'
               }`}
-              onClick={() => setSelectedModel('linear-regression')}
             >
               {selectedModel === 'linear-regression' && (
                 <CheckCircle2 className="absolute top-3 right-3 w-5 h-5 text-blue-600" />
@@ -156,6 +190,8 @@ export function Settings() {
             </div>
           </div>
           
+          {isLoading && <p className="text-sm text-gray-500">Loading stocks...</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="space-y-3">
             {allStocks.map((stock) => (
               <div key={stock.symbol} className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50">
@@ -219,9 +255,7 @@ export function Settings() {
               <div className="flex justify-between">
                 <span className="text-gray-600">Prediction Model:</span>
                 <span className="text-gray-900">
-                  {selectedModel === 'linear-regression' ? 'Linear Regression' : 
-                   selectedModel === 'random-forest' ? 'Random Forest' : 
-                   selectedModel === 'lstm' ? 'LSTM Neural Network' : 'None'}
+                  {getSelectedModelLabel()}
                 </span>
               </div>
               <div className="flex justify-between">
