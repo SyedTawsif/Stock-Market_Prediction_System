@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { StockCard } from './StockCard';
-import { getAllStocks, type StockData } from '../utils/mockData';
+import { getActiveModelLabel, getAllStocks, type StockData } from '../utils/mockData';
 import { Search, Brain } from 'lucide-react';
 import { Input } from './ui/input';
 
@@ -31,8 +31,7 @@ export function Dashboard() {
     };
   }, []);
   
-  // In a real app, this would come from global state or context
-  const currentModel = 'Linear Regression';
+  const currentModel = getActiveModelLabel();
   
   const filteredStocks = stocks.filter(stock =>
     stock.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||

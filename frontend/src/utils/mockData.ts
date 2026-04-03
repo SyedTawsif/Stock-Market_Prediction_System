@@ -23,6 +23,7 @@ export interface StockStats {
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000';
+const ACTIVE_MODEL_KEY = 'activePredictionModel';
 
 const STOCK_NAMES: Record<string, string> = {
   AAPL: 'Apple Inc.',
@@ -64,8 +65,22 @@ const toStockData = (payload: BackendStockResponse): StockData => ({
   },
 });
 
+const getApiModel = (): string => {
+  const stored = localStorage.getItem(ACTIVE_MODEL_KEY) ?? 'linear-regression';
+  return stored === 'lstm' ? 'lstm' : 'linear';
+};
+
+export const getActiveModelLabel = (): string => {
+  const stored = localStorage.getItem(ACTIVE_MODEL_KEY) ?? 'linear-regression';
+  return stored === 'lstm' ? 'LSTM Neural Network' : 'Linear Regression';
+};
+
+export const saveActiveModel = (model: 'linear-regression' | 'lstm') => {
+  localStorage.setItem(ACTIVE_MODEL_KEY, model);
+};
+
 export const getStockBySymbol = async (symbol: string): Promise<StockData | undefined> => {
-  const response = await fetch(`${API_BASE_URL}/api/stocks/${symbol}?model=linear`);
+  const response = await fetch(`${API_BASE_URL}/api/stocks/${symbol}?model=${getApiModel()}`);
   if (response.status === 404) {
     return undefined;
   }
@@ -83,8 +98,9 @@ export const getAllStocks = async (): Promise<StockData[]> => {
   }
 
   const symbols = (await listResponse.json()) as string[];
+  const model = getApiModel();
   const stockRequests = symbols.map((symbol) =>
-    fetch(`${API_BASE_URL}/api/stocks/${symbol}?model=linear`)
+    fetch(`${API_BASE_URL}/api/stocks/${symbol}?model=${model}`)
       .then(async (response) => {
         if (!response.ok) {
           throw new Error(`Failed to fetch stock details for ${symbol}`);
