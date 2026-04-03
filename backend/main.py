@@ -12,6 +12,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 MODELS_DIR = os.path.join(BASE_DIR, "models")
 METADATA_DIR = os.path.join(MODELS_DIR, "metadata")
+SUPPORTED_RANGES = {"1mo", "3mo", "6mo", "1y", "2y", "5y"}
 
 app = FastAPI(title="Stock Prediction API", version="0.1.0")
 app.add_middleware(
@@ -33,12 +34,19 @@ def extract_symbol_from_filename(file_name: str) -> str:
     return base_name.split("_")[0].upper()
 
 
-def get_latest_csv_for_symbol(symbol: str) -> str | None:
-    """Return a CSV path for the symbol from DATA_DIR, preferring *_1y.csv when available."""
+def get_latest_csv_for_symbol(symbol: str, range_value: str | None = None) -> str | None:
+    """Return a CSV path for the symbol and optional range."""
     if not os.path.isdir(DATA_DIR):
         return None
 
     symbol = symbol.upper()
+    if range_value:
+        exact_name = f"{symbol}_{range_value}.csv"
+        exact_path = os.path.join(DATA_DIR, exact_name)
+        if os.path.isfile(exact_path):
+            return exact_path
+        return None
+
     matching_files = []
     for file_name in os.listdir(DATA_DIR):
         if not file_name.endswith(".csv"):
@@ -55,12 +63,19 @@ def get_latest_csv_for_symbol(symbol: str) -> str | None:
     return os.path.join(DATA_DIR, chosen)
 
 
-def find_model_path(symbol: str, model_suffix: str) -> str | None:
-    """Find model path for a symbol, supporting optional timeframe suffixes."""
+def find_model_path(symbol: str, model_suffix: str, range_value: str | None = None) -> str | None:
+    """Find model path for a symbol and optional range."""
     if not os.path.isdir(MODELS_DIR):
         return None
 
     symbol = symbol.upper()
+    if range_value:
+        exact_name = f"{symbol}_{range_value}{model_suffix}"
+        exact_path = os.path.join(MODELS_DIR, exact_name)
+        if os.path.isfile(exact_path):
+            return exact_path
+        return None
+
     candidates = []
     for file_name in os.listdir(MODELS_DIR):
         if not file_name.endswith(model_suffix):
@@ -76,18 +91,31 @@ def find_model_path(symbol: str, model_suffix: str) -> str | None:
     return os.path.join(MODELS_DIR, chosen)
 
 
-def find_metrics_path(symbol: str, model_name: str) -> str | None:
-    """Find metrics file path for a symbol/model, supporting optional timeframe suffixes."""
+def get_metrics_file_names(symbol: str, model_name: str, range_value: str | None):
+    if model_name == "lstm":
+        metrics_suffix = "_lstm_metrics.json"
+        preferred_name = f"{symbol}_1y_lstm_metrics.json"
+        exact_name = f"{symbol}_{range_value}_lstm_metrics.json" if range_value else None
+    else:
+        metrics_suffix = "_metrics.json"
+        preferred_name = f"{symbol}_1y_metrics.json"
+        exact_name = f"{symbol}_{range_value}_metrics.json" if range_value else None
+    return metrics_suffix, preferred_name, exact_name
+
+
+def find_metrics_path(symbol: str, model_name: str, range_value: str | None = None) -> str | None:
+    """Find metrics file path for a symbol/model and optional range."""
     if not os.path.isdir(METADATA_DIR):
         return None
 
     symbol = symbol.upper()
-    if model_name == "lstm":
-        metrics_suffix = "_lstm_metrics.json"
-        preferred_name = f"{symbol}_1y_lstm_metrics.json"
-    else:
-        metrics_suffix = "_metrics.json"
-        preferred_name = f"{symbol}_1y_metrics.json"
+    metrics_suffix, preferred_name, exact_name = get_metrics_file_names(symbol, model_name, range_value)
+
+    if exact_name:
+        exact_path = os.path.join(METADATA_DIR, exact_name)
+        if os.path.isfile(exact_path):
+            return exact_path
+        return None
 
     candidates = []
     for file_name in os.listdir(METADATA_DIR):
@@ -125,9 +153,9 @@ def calculate_trend(prices: list[float]) -> str:
     return "neutral"
 
 
-def load_metrics(symbol: str, model_name: str) -> dict:
+def load_metrics(symbol: str, model_name: str, range_value: str | None = None) -> dict:
     """Load saved model metrics for the symbol."""
-    metrics_path = find_metrics_path(symbol, model_name)
+    metrics_path = find_metrics_path(symbol, model_name, range_value=range_value)
     if not metrics_path or not os.path.isfile(metrics_path):
         return {"mse": None, "mae": None}
 
@@ -159,8 +187,8 @@ MODEL_REGISTRY = {
 }
 
 
-def load_stock_frame(symbol: str) -> pd.DataFrame:
-    csv_path = get_latest_csv_for_symbol(symbol)
+def load_stock_frame(symbol: str, range_value: str | None = None) -> pd.DataFrame:
+    csv_path = get_latest_csv_for_symbol(symbol, range_value=range_value)
     if not csv_path:
         raise HTTPException(status_code=404, detail=f"Data file not found for symbol '{symbol.upper()}'.")
 
@@ -177,10 +205,10 @@ def load_stock_frame(symbol: str) -> pd.DataFrame:
     return data
 
 
-def predict_symbol(symbol: str, model_name: str) -> dict:
-    data = load_stock_frame(symbol)
+def predict_symbol(symbol: str, model_name: str, range_value: str | None = None) -> dict:
+    data = load_stock_frame(symbol, range_value=range_value)
     model_suffix = MODEL_REGISTRY[model_name]["model_file_suffix"]
-    model_path = find_model_path(symbol, model_suffix)
+    model_path = find_model_path(symbol, model_suffix, range_value=range_value)
     if not model_path or not os.path.isfile(model_path):
         raise HTTPException(status_code=404, detail=f"Model not found for symbol '{symbol.upper()}'.")
 
@@ -204,7 +232,7 @@ def predict_symbol(symbol: str, model_name: str) -> dict:
                 detail=f"Not enough rows to compute LSTM sequence for '{symbol.upper()}'.",
             )
         scaler_suffix = MODEL_REGISTRY[model_name]["scaler_file_suffix"]
-        scaler_path = find_model_path(symbol, scaler_suffix)
+        scaler_path = find_model_path(symbol, scaler_suffix, range_value=range_value)
         if not scaler_path or not os.path.isfile(scaler_path):
             raise HTTPException(status_code=404, detail=f"Scaler not found for symbol '{symbol.upper()}'.")
 
@@ -254,18 +282,28 @@ def get_stocks() -> list[str]:
     responses={
         400: {"description": "Invalid request or insufficient data"},
         404: {"description": "Model/data not found"},
+        500: {"description": "Server dependency/configuration issue"},
     },
 )
-def get_stock_details(symbol: str, model: Annotated[str, Query()] = "linear") -> dict:
+def get_stock_details(
+    symbol: str,
+    model: Annotated[str, Query()] = "linear",
+    range: Annotated[str, Query()] = "1y",
+) -> dict:
     model_name = model.lower()
     if model_name not in MODEL_REGISTRY:
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported model '{model}'. Available models: {', '.join(MODEL_REGISTRY.keys())}",
         )
+    if range not in SUPPORTED_RANGES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported range '{range}'. Available ranges: {', '.join(sorted(SUPPORTED_RANGES))}",
+        )
 
-    data = load_stock_frame(symbol)
-    prediction = predict_symbol(symbol, model_name)
+    data = load_stock_frame(symbol, range_value=range)
+    prediction = predict_symbol(symbol, model_name, range_value=range)
 
     history = []
     for _, row in data.iterrows():
@@ -286,7 +324,7 @@ def get_stock_details(symbol: str, model: Annotated[str, Query()] = "linear") ->
     prices = [point["actual"] for point in history]
     avg_price = sum(prices) / len(prices)
 
-    metrics = load_metrics(symbol.upper(), model_name)
+    metrics = load_metrics(symbol.upper(), model_name, range_value=range)
     return {
         "symbol": symbol.upper(),
         "name": symbol.upper(),
@@ -311,18 +349,28 @@ def get_stock_details(symbol: str, model: Annotated[str, Query()] = "linear") ->
     responses={
         400: {"description": "Invalid request or insufficient data"},
         404: {"description": "Model/data not found"},
+        500: {"description": "Server dependency/configuration issue"},
     },
 )
-def get_prediction(symbol: str, model: Annotated[str, Query()] = "linear") -> dict:
+def get_prediction(
+    symbol: str,
+    model: Annotated[str, Query()] = "linear",
+    range: Annotated[str, Query()] = "1y",
+) -> dict:
     model_name = model.lower()
     if model_name not in MODEL_REGISTRY:
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported model '{model}'. Available models: {', '.join(MODEL_REGISTRY.keys())}",
         )
+    if range not in SUPPORTED_RANGES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported range '{range}'. Available ranges: {', '.join(sorted(SUPPORTED_RANGES))}",
+        )
 
-    prediction = predict_symbol(symbol, model_name)
-    metrics = load_metrics(symbol.upper(), model_name)
+    prediction = predict_symbol(symbol, model_name, range_value=range)
+    metrics = load_metrics(symbol.upper(), model_name, range_value=range)
 
     return {
         "symbol": symbol.upper(),
@@ -330,5 +378,6 @@ def get_prediction(symbol: str, model: Annotated[str, Query()] = "linear") -> di
         "predicted_price": prediction["predicted_price"],
         "change_percent": prediction["change_percent"],
         "model": model_name,
+        "range": range,
         "metrics": metrics,
     }

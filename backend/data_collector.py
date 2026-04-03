@@ -109,6 +109,11 @@ if __name__ == "__main__":
         help=f"Data range to download (default: {DEFAULT_PERIOD})",
     )
     parser.add_argument(
+        "--all-periods",
+        action="store_true",
+        help="Download all supported periods for each ticker.",
+    )
+    parser.add_argument(
         "--interval",
         default=DEFAULT_INTERVAL,
         help="Candle interval, e.g. 1d, 1wk (default: 1d)",
@@ -120,9 +125,18 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    download_multiple(
-        tickers=args.tickers,
-        period=args.period,
-        interval=args.interval,
-        out_dir=args.out_dir,
-    )
+    if args.all_periods:
+        for period in SUPPORTED_PERIODS:
+            download_multiple(
+                tickers=args.tickers,
+                period=period,
+                interval=args.interval,
+                out_dir=args.out_dir,
+            )
+    else:
+        download_multiple(
+            tickers=args.tickers,
+            period=args.period,
+            interval=args.interval,
+            out_dir=args.out_dir,
+        )

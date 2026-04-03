@@ -4,7 +4,7 @@ import { Button } from './ui/button';
 import { Label } from './ui/label';
 import { Checkbox } from './ui/checkbox';
 import { RadioGroup, RadioGroupItem } from './ui/radio-group';
-import { getAllStocks, saveActiveModel, type StockData } from '../utils/mockData';
+import { getAllStocks, saveActiveModel, saveSelectedRange, type StockData } from '../utils/mockData';
 import { Save, RefreshCw, Brain, CheckCircle2 } from 'lucide-react';
 
 const ALLOWED_RANGES = ['1mo', '3mo', '6mo', '1y', '2y', '5y'] as const;
@@ -72,7 +72,7 @@ export function Settings() {
     if (selectedModel === 'linear-regression' || selectedModel === 'lstm') {
       saveActiveModel(selectedModel);
     }
-    localStorage.setItem('selectedHistoricalRange', selectedRange);
+    saveSelectedRange(selectedRange);
     alert('Settings saved successfully!');
   };
   
