@@ -76,15 +76,22 @@ def find_model_path(symbol: str, model_suffix: str) -> str | None:
     return os.path.join(MODELS_DIR, chosen)
 
 
-def find_metrics_path(symbol: str) -> str | None:
-    """Find metrics file path for a symbol, supporting optional timeframe suffixes."""
+def find_metrics_path(symbol: str, model_name: str) -> str | None:
+    """Find metrics file path for a symbol/model, supporting optional timeframe suffixes."""
     if not os.path.isdir(METADATA_DIR):
         return None
 
     symbol = symbol.upper()
+    if model_name == "lstm":
+        metrics_suffix = "_lstm_metrics.json"
+        preferred_name = f"{symbol}_1y_lstm_metrics.json"
+    else:
+        metrics_suffix = "_metrics.json"
+        preferred_name = f"{symbol}_1y_metrics.json"
+
     candidates = []
     for file_name in os.listdir(METADATA_DIR):
-        if not file_name.endswith("_metrics.json"):
+        if not file_name.endswith(metrics_suffix):
             continue
         if extract_symbol_from_filename(file_name) == symbol:
             candidates.append(file_name)
@@ -92,8 +99,7 @@ def find_metrics_path(symbol: str) -> str | None:
     if not candidates:
         return None
 
-    preferred = f"{symbol}_1y_metrics.json"
-    chosen = preferred if preferred in candidates else sorted(candidates)[-1]
+    chosen = preferred_name if preferred_name in candidates else sorted(candidates)[-1]
     return os.path.join(METADATA_DIR, chosen)
 
 
@@ -119,9 +125,9 @@ def calculate_trend(prices: list[float]) -> str:
     return "neutral"
 
 
-def load_metrics(symbol: str) -> dict:
+def load_metrics(symbol: str, model_name: str) -> dict:
     """Load saved model metrics for the symbol."""
-    metrics_path = find_metrics_path(symbol)
+    metrics_path = find_metrics_path(symbol, model_name)
     if not metrics_path or not os.path.isfile(metrics_path):
         return {"mse": None, "mae": None}
 
@@ -129,6 +135,12 @@ def load_metrics(symbol: str) -> dict:
         metadata = json.load(metrics_file)
 
     model_metrics = metadata.get("metrics", {})
+    if model_name == "lstm":
+        return {
+            "mse": model_metrics.get("lstm_test_mse"),
+            "mae": model_metrics.get("lstm_test_mae"),
+        }
+
     return {
         "mse": model_metrics.get("linear_regression_test_mse"),
         "mae": model_metrics.get("linear_regression_test_mae"),
@@ -138,8 +150,12 @@ def load_metrics(symbol: str) -> dict:
 MODEL_REGISTRY = {
     "linear": {
         "model_file_suffix": "_linear_model.pkl",
-        "predictor": "linear",
-    }
+    },
+    "lstm": {
+        "model_file_suffix": "_lstm_model.keras",
+        "scaler_file_suffix": "_lstm_scaler.pkl",
+        "sequence_length": 10,
+    },
 }
 
 
@@ -163,24 +179,53 @@ def load_stock_frame(symbol: str) -> pd.DataFrame:
 
 def predict_symbol(symbol: str, model_name: str) -> dict:
     data = load_stock_frame(symbol)
-    engineered = build_linear_features(data[["Close"]])
-    if engineered.empty:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Not enough rows to compute features for '{symbol.upper()}'. Need at least 5 valid rows.",
-        )
-
     model_suffix = MODEL_REGISTRY[model_name]["model_file_suffix"]
     model_path = find_model_path(symbol, model_suffix)
     if not model_path or not os.path.isfile(model_path):
         raise HTTPException(status_code=404, detail=f"Model not found for symbol '{symbol.upper()}'.")
 
-    feature_columns = ["Prev_Close", "Prev_2_Close", "MA_5"]
-    latest_row = engineered.iloc[[-1]]
-    current_price = float(latest_row["Close"].iloc[0])
+    if model_name == "linear":
+        engineered = build_linear_features(data[["Close"]])
+        if engineered.empty:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Not enough rows to compute features for '{symbol.upper()}'. Need at least 5 valid rows.",
+            )
+        feature_columns = ["Prev_Close", "Prev_2_Close", "MA_5"]
+        latest_row = engineered.iloc[[-1]]
+        current_price = float(latest_row["Close"].iloc[0])
+        trained_model = joblib.load(model_path)
+        predicted_price = float(trained_model.predict(latest_row[feature_columns])[0])
+    else:
+        sequence_length = MODEL_REGISTRY[model_name]["sequence_length"]
+        if len(data) <= sequence_length:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Not enough rows to compute LSTM sequence for '{symbol.upper()}'.",
+            )
+        scaler_suffix = MODEL_REGISTRY[model_name]["scaler_file_suffix"]
+        scaler_path = find_model_path(symbol, scaler_suffix)
+        if not scaler_path or not os.path.isfile(scaler_path):
+            raise HTTPException(status_code=404, detail=f"Scaler not found for symbol '{symbol.upper()}'.")
 
-    trained_model = joblib.load(model_path)
-    predicted_price = float(trained_model.predict(latest_row[feature_columns])[0])
+        close_values = data[["Close"]].dropna().values
+        current_price = float(close_values[-1][0])
+        scaler = joblib.load(scaler_path)
+        scaled_values = scaler.transform(close_values)
+        latest_sequence = scaled_values[-sequence_length:].reshape(1, sequence_length, 1)
+
+        try:
+            from tensorflow.keras.models import load_model
+        except ImportError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail="TensorFlow is not installed. Install dependencies to use the LSTM model.",
+            ) from exc
+
+        lstm_model = load_model(model_path)
+        predicted_scaled = lstm_model.predict(latest_sequence, verbose=0)
+        predicted_price = float(scaler.inverse_transform(predicted_scaled)[0][0])
+
     change_percent = ((predicted_price - current_price) / current_price) * 100
 
     return {
@@ -241,7 +286,7 @@ def get_stock_details(symbol: str, model: Annotated[str, Query()] = "linear") ->
     prices = [point["actual"] for point in history]
     avg_price = sum(prices) / len(prices)
 
-    metrics = load_metrics(symbol.upper())
+    metrics = load_metrics(symbol.upper(), model_name)
     return {
         "symbol": symbol.upper(),
         "name": symbol.upper(),
@@ -277,7 +322,7 @@ def get_prediction(symbol: str, model: Annotated[str, Query()] = "linear") -> di
         )
 
     prediction = predict_symbol(symbol, model_name)
-    metrics = load_metrics(symbol.upper())
+    metrics = load_metrics(symbol.upper(), model_name)
 
     return {
         "symbol": symbol.upper(),
