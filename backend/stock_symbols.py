@@ -1,0 +1,41 @@
+"""Canonical ticker list for downloads and display names for API/UI."""
+
+DEFAULT_DOWNLOAD_TICKERS = [
+    "AAPL",
+    "MSFT",
+    "GOOGL",
+    "NVDA",
+    "AMZN",
+    "META",
+    "TSLA",
+    "JPM",
+    "BAC",
+    "LLY",
+    "UNH",
+    "XOM",
+    "CVX",
+    "WMT",
+    "COST",
+    "PLTR",
+    "SNOW",
+]
+
+STOCK_DISPLAY_NAMES = {
+    "AAPL": "Apple Inc.",
+    "MSFT": "Microsoft Corporation",
+    "GOOGL": "Alphabet Inc.",
+    "NVDA": "NVIDIA Corporation",
+    "AMZN": "Amazon.com Inc.",
+    "META": "Meta Platforms Inc.",
+    "TSLA": "Tesla Inc.",
+    "JPM": "JPMorgan Chase & Co.",
+    "BAC": "Bank of America Corporation",
+    "LLY": "Eli Lilly and Company",
+    "UNH": "UnitedHealth Group Inc.",
+    "XOM": "Exxon Mobil Corporation",
+    "CVX": "Chevron Corporation",
+    "WMT": "Walmart Inc.",
+    "COST": "Costco Wholesale Corporation",
+    "PLTR": "Palantir Technologies Inc.",
+    "SNOW": "Snowflake Inc.",
+}

@@ -69,7 +69,11 @@ export function Settings() {
   };
   
   const handleSave = () => {
-    if (selectedModel === 'linear-regression' || selectedModel === 'lstm') {
+    if (
+      selectedModel === 'linear-regression' ||
+      selectedModel === 'lstm' ||
+      selectedModel === 'random-forest'
+    ) {
       saveActiveModel(selectedModel);
     }
     saveSelectedRange(selectedRange);
@@ -153,37 +157,54 @@ export function Settings() {
                 Fast and simple model based on linear trends. Best for stable markets.
               </p>
               <div className="mt-3 ml-7">
-                <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-green-100 text-green-700">
-                  Active
-                </span>
+                {selectedModel === 'linear-regression' && (
+                  <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-green-100 text-green-700">
+                    Active
+                  </span>
+                )}
               </div>
             </div>
             
-            {/* Random Forest - Coming Soon */}
+            {/* Random Forest */}
             <div
-              className="relative p-4 rounded-lg border-2 border-gray-200 bg-gray-50 opacity-60 cursor-not-allowed"
+              className={`relative p-4 rounded-lg border-2 transition-all cursor-pointer ${
+                selectedModel === 'random-forest'
+                  ? 'border-blue-600 bg-blue-50'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
+              onClick={() => handleModelTileSelect('random-forest')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleModelTileSelect('random-forest');
+                }
+              }}
               role="radio"
               aria-checked={selectedModel === 'random-forest'}
-              aria-disabled="true"
-              tabIndex={-1}
+              tabIndex={0}
             >
+              {selectedModel === 'random-forest' && (
+                <CheckCircle2 className="absolute top-3 right-3 w-5 h-5 text-blue-600" />
+              )}
               <div className="flex items-center gap-3 mb-2">
-                <RadioGroupItem value="random-forest" id="random-forest" disabled />
-                <Label htmlFor="random-forest" className="text-gray-400">
+                <RadioGroupItem value="random-forest" id="random-forest" />
+                <Label htmlFor="random-forest" className="cursor-pointer">
                   Random Forest
                 </Label>
               </div>
-              <p className="text-sm text-gray-400 ml-7">
+              <p className="text-sm text-gray-600 ml-7">
                 Ensemble learning method for improved accuracy. Better for volatile markets.
               </p>
               <div className="mt-3 ml-7">
-                <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-gray-200 text-gray-600">
-                  Coming Soon
-                </span>
+                {selectedModel === 'random-forest' && (
+                  <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-green-100 text-green-700">
+                    Active
+                  </span>
+                )}
               </div>
             </div>
             
-            {/* LSTM - Coming Soon */}
+            {/* LSTM */}
             <div
               className={`relative p-4 rounded-lg border-2 transition-all ${
                 selectedModel === 'lstm'

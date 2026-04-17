@@ -31,6 +31,20 @@ const STOCK_NAMES: Record<string, string> = {
   AAPL: 'Apple Inc.',
   MSFT: 'Microsoft Corporation',
   GOOGL: 'Alphabet Inc.',
+  NVDA: 'NVIDIA Corporation',
+  AMZN: 'Amazon.com Inc.',
+  META: 'Meta Platforms Inc.',
+  TSLA: 'Tesla Inc.',
+  JPM: 'JPMorgan Chase & Co.',
+  BAC: 'Bank of America Corporation',
+  LLY: 'Eli Lilly and Company',
+  UNH: 'UnitedHealth Group Inc.',
+  XOM: 'Exxon Mobil Corporation',
+  CVX: 'Chevron Corporation',
+  WMT: 'Walmart Inc.',
+  COST: 'Costco Wholesale Corporation',
+  PLTR: 'Palantir Technologies Inc.',
+  SNOW: 'Snowflake Inc.',
 };
 
 interface BackendStockResponse {
@@ -40,6 +54,7 @@ interface BackendStockResponse {
   predicted_price: number;
   change_percent: number;
   model: string;
+  range?: string;
   metrics: { mse: number | null; mae: number | null };
   historical_data: HistoricalDataPoint[];
   stats: {
@@ -69,7 +84,9 @@ const toStockData = (payload: BackendStockResponse): StockData => ({
 
 const getApiModel = (): string => {
   const stored = localStorage.getItem(ACTIVE_MODEL_KEY) ?? 'linear-regression';
-  return stored === 'lstm' ? 'lstm' : 'linear';
+  if (stored === 'lstm') return 'lstm';
+  if (stored === 'random-forest') return 'random_forest';
+  return 'linear';
 };
 
 const getSelectedRange = (): string => {
@@ -79,10 +96,12 @@ const getSelectedRange = (): string => {
 
 export const getActiveModelLabel = (): string => {
   const stored = localStorage.getItem(ACTIVE_MODEL_KEY) ?? 'linear-regression';
-  return stored === 'lstm' ? 'LSTM Neural Network' : 'Linear Regression';
+  if (stored === 'lstm') return 'LSTM Neural Network';
+  if (stored === 'random-forest') return 'Random Forest';
+  return 'Linear Regression';
 };
 
-export const saveActiveModel = (model: 'linear-regression' | 'lstm') => {
+export const saveActiveModel = (model: 'linear-regression' | 'lstm' | 'random-forest') => {
   localStorage.setItem(ACTIVE_MODEL_KEY, model);
 };
 

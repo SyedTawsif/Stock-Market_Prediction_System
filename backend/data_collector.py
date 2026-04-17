@@ -4,8 +4,11 @@ Downloads OHLCV data from Yahoo Finance and saves CSVs keyed by ticker and perio
 """
 import argparse
 import os
+
 import pandas as pd
 import yfinance as yf
+
+from stock_symbols import DEFAULT_DOWNLOAD_TICKERS
 
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_OUT_DIR = os.path.join(BACKEND_DIR, "data")
@@ -99,8 +102,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--tickers",
         nargs="+",
-        default=["AAPL", "MSFT", "GOOGL"],
-        help="Stock symbols to download (default: AAPL MSFT GOOGL)",
+        default=DEFAULT_DOWNLOAD_TICKERS,
+        help="Stock symbols to download (default: full tracked list from stock_symbols)",
     )
     parser.add_argument(
         "--period",

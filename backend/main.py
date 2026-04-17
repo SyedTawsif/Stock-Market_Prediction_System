@@ -1,5 +1,6 @@
-import os
 import json
+import os
+import sys
 from typing import Annotated
 
 import joblib
@@ -9,6 +10,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+from stock_symbols import STOCK_DISPLAY_NAMES
+
 DATA_DIR = os.path.join(BASE_DIR, "data")
 MODELS_DIR = os.path.join(BASE_DIR, "models")
 METADATA_DIR = os.path.join(MODELS_DIR, "metadata")
@@ -96,6 +101,10 @@ def get_metrics_file_names(symbol: str, model_name: str, range_value: str | None
         metrics_suffix = "_lstm_metrics.json"
         preferred_name = f"{symbol}_1y_lstm_metrics.json"
         exact_name = f"{symbol}_{range_value}_lstm_metrics.json" if range_value else None
+    elif model_name == "random_forest":
+        metrics_suffix = "_rf_metrics.json"
+        preferred_name = f"{symbol}_1y_rf_metrics.json"
+        exact_name = f"{symbol}_{range_value}_rf_metrics.json" if range_value else None
     else:
         metrics_suffix = "_metrics.json"
         preferred_name = f"{symbol}_1y_metrics.json"
@@ -132,11 +141,40 @@ def find_metrics_path(symbol: str, model_name: str, range_value: str | None = No
 
 
 def build_linear_features(data: pd.DataFrame) -> pd.DataFrame:
-    """Create the same features used during model training."""
+    """Create the same features used during linear model training."""
     frame = data.copy()
     frame["Prev_Close"] = frame["Close"].shift(1)
     frame["Prev_2_Close"] = frame["Close"].shift(2)
     frame["MA_5"] = frame["Close"].rolling(window=5).mean()
+    return frame.dropna()
+
+
+RF_FEATURE_COLUMNS = [
+    "Prev_Close",
+    "Prev_2_Close",
+    "Prev_3_Close",
+    "MA_5",
+    "MA_10",
+    "MA_20",
+    "Volatility_5",
+    "Return",
+    "Prev_Return",
+]
+
+
+def build_random_forest_features(data: pd.DataFrame) -> pd.DataFrame:
+    """Match train_random_forest_model.engineer_features (time-series safe)."""
+    frame = data.copy()
+    close_series = frame["Close"]
+    frame["Prev_Close"] = close_series.shift(1)
+    frame["Prev_2_Close"] = close_series.shift(2)
+    frame["Prev_3_Close"] = close_series.shift(3)
+    frame["MA_5"] = close_series.rolling(window=5).mean()
+    frame["MA_10"] = close_series.rolling(window=10).mean()
+    frame["MA_20"] = close_series.rolling(window=20).mean()
+    frame["Volatility_5"] = close_series.rolling(window=5).std()
+    frame["Return"] = close_series.pct_change()
+    frame["Prev_Return"] = frame["Return"].shift(1)
     return frame.dropna()
 
 
@@ -168,6 +206,12 @@ def load_metrics(symbol: str, model_name: str, range_value: str | None = None) -
             "mse": model_metrics.get("lstm_test_mse"),
             "mae": model_metrics.get("lstm_test_mae"),
         }
+    if model_name == "random_forest":
+        return {
+            "mse": model_metrics.get("random_forest_test_mse"),
+            "mae": model_metrics.get("random_forest_test_mae"),
+            "directional_accuracy": model_metrics.get("directional_accuracy"),
+        }
 
     return {
         "mse": model_metrics.get("linear_regression_test_mse"),
@@ -178,6 +222,9 @@ def load_metrics(symbol: str, model_name: str, range_value: str | None = None) -
 MODEL_REGISTRY = {
     "linear": {
         "model_file_suffix": "_linear_model.pkl",
+    },
+    "random_forest": {
+        "model_file_suffix": "_rf_model.pkl",
     },
     "lstm": {
         "model_file_suffix": "_lstm_model.keras",
@@ -224,7 +271,18 @@ def predict_symbol(symbol: str, model_name: str, range_value: str | None = None)
         current_price = float(latest_row["Close"].iloc[0])
         trained_model = joblib.load(model_path)
         predicted_price = float(trained_model.predict(latest_row[feature_columns])[0])
-    else:
+    elif model_name == "random_forest":
+        engineered = build_random_forest_features(data[["Close"]])
+        if engineered.empty:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Not enough rows to compute RF features for '{symbol.upper()}'.",
+            )
+        latest_row = engineered.iloc[[-1]]
+        current_price = float(latest_row["Close"].iloc[0])
+        trained_model = joblib.load(model_path)
+        predicted_price = float(trained_model.predict(latest_row[RF_FEATURE_COLUMNS])[0])
+    elif model_name == "lstm":
         sequence_length = MODEL_REGISTRY[model_name]["sequence_length"]
         if len(data) <= sequence_length:
             raise HTTPException(
@@ -253,6 +311,8 @@ def predict_symbol(symbol: str, model_name: str, range_value: str | None = None)
         lstm_model = load_model(model_path)
         predicted_scaled = lstm_model.predict(latest_sequence, verbose=0)
         predicted_price = float(scaler.inverse_transform(predicted_scaled)[0][0])
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported model '{model_name}'.")
 
     change_percent = ((predicted_price - current_price) / current_price) * 100
 
@@ -275,6 +335,11 @@ def get_stocks() -> list[str]:
             symbols.add(extract_symbol_from_filename(file_name))
 
     return sorted(symbols)
+
+
+def display_name_for_symbol(symbol: str) -> str:
+    sym = symbol.upper()
+    return STOCK_DISPLAY_NAMES.get(sym, sym)
 
 
 @app.get(
@@ -327,11 +392,12 @@ def get_stock_details(
     metrics = load_metrics(symbol.upper(), model_name, range_value=range)
     return {
         "symbol": symbol.upper(),
-        "name": symbol.upper(),
+        "name": display_name_for_symbol(symbol),
         "current_price": prediction["current_price"],
         "predicted_price": prediction["predicted_price"],
         "change_percent": prediction["change_percent"],
         "model": model_name,
+        "range": range,
         "metrics": metrics,
         "historical_data": history,
         "stats": {
