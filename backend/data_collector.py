@@ -4,8 +4,11 @@ Downloads OHLCV data from Yahoo Finance and saves CSVs keyed by ticker and perio
 """
 import argparse
 import os
+
 import pandas as pd
 import yfinance as yf
+
+from stock_symbols import DEFAULT_DOWNLOAD_TICKERS
 
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_OUT_DIR = os.path.join(BACKEND_DIR, "data")
@@ -99,14 +102,19 @@ if __name__ == "__main__":
     parser.add_argument(
         "--tickers",
         nargs="+",
-        default=["AAPL", "MSFT", "GOOGL"],
-        help="Stock symbols to download (default: AAPL MSFT GOOGL)",
+        default=DEFAULT_DOWNLOAD_TICKERS,
+        help="Stock symbols to download (default: full tracked list from stock_symbols)",
     )
     parser.add_argument(
         "--period",
         choices=SUPPORTED_PERIODS,
         default=DEFAULT_PERIOD,
         help=f"Data range to download (default: {DEFAULT_PERIOD})",
+    )
+    parser.add_argument(
+        "--all-periods",
+        action="store_true",
+        help="Download all supported periods for each ticker.",
     )
     parser.add_argument(
         "--interval",
@@ -120,9 +128,18 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    download_multiple(
-        tickers=args.tickers,
-        period=args.period,
-        interval=args.interval,
-        out_dir=args.out_dir,
-    )
+    if args.all_periods:
+        for period in SUPPORTED_PERIODS:
+            download_multiple(
+                tickers=args.tickers,
+                period=period,
+                interval=args.interval,
+                out_dir=args.out_dir,
+            )
+    else:
+        download_multiple(
+            tickers=args.tickers,
+            period=args.period,
+            interval=args.interval,
+            out_dir=args.out_dir,
+        )
