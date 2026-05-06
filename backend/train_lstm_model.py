@@ -1,5 +1,7 @@
+import argparse
 import json
 import os
+from typing import Optional
 
 import joblib
 import numpy as np
@@ -24,6 +26,44 @@ os.makedirs(MODEL_DIR, exist_ok=True)
 os.makedirs(METADATA_DIR, exist_ok=True)
 
 
+def _parse_args():
+    p = argparse.ArgumentParser(
+        description="Train LSTM on CSVs in backend/data."
+    )
+    p.add_argument(
+        "ticker",
+        nargs="?",
+        default=None,
+        help="Stock symbol (use with period to train a single file, e.g. AAPL 1y)",
+    )
+    p.add_argument(
+        "period",
+        nargs="?",
+        default=None,
+        help="Time range matching CSV suffix from data_collector (e.g. 1mo, 1y)",
+    )
+    return p.parse_args()
+
+
+def _csv_files_to_process(ticker: Optional[str], period: Optional[str]) -> list[str]:
+    if (ticker is None) ^ (period is None):
+        raise SystemExit("Provide both ticker and period, or neither.")
+
+    if ticker and period:
+        name = f"{ticker}_{period}.csv"
+        path = os.path.join(DATA_DIR, name)
+        if not os.path.isfile(path):
+            print(f"No data file found: {name}. Skipping.")
+            return []
+        return [name]
+
+    return sorted(f for f in os.listdir(DATA_DIR) if f.endswith(".csv"))
+
+
+_args = _parse_args()
+_csv_list = _csv_files_to_process(_args.ticker, _args.period)
+
+
 def create_sequences(values: np.ndarray, sequence_length: int):
     X_seq, y_seq = [], []
     for i in range(sequence_length, len(values)):
@@ -36,7 +76,7 @@ def create_sequences(values: np.ndarray, sequence_length: int):
     return X_arr, y_arr
 
 
-for file_name in os.listdir(DATA_DIR):
+for file_name in _csv_list:
     if not file_name.endswith(".csv"):
         continue
 
@@ -100,6 +140,13 @@ for file_name in os.listdir(DATA_DIR):
 
     print(f"{ticker} - LSTM Test MSE: {mse:.6f} | MAE: {mae:.6f}")
     print(f"{ticker} - Naive Baseline Test MSE: {baseline_mse:.6f} | MAE: {baseline_mae:.6f}")
+
+    predictions_df = pd.DataFrame(
+        {"Actual": y_test_actual, "Predicted": y_pred}
+    )
+    predictions_path = os.path.join(METADATA_DIR, f"{ticker}_lstm_predictions.csv")
+    predictions_df.to_csv(predictions_path, index=False)
+    print(f"Predictions saved as {predictions_path}")
 
     model_path = os.path.join(MODEL_DIR, f"{ticker}_lstm_model.keras")
     scaler_path = os.path.join(MODEL_DIR, f"{ticker}_lstm_scaler.pkl")

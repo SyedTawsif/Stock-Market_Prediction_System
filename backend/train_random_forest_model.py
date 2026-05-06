@@ -1,5 +1,7 @@
+import argparse
 import json
 import os
+from typing import Optional
 
 import joblib
 import numpy as np
@@ -27,6 +29,44 @@ FEATURE_COLUMNS = [
 
 os.makedirs(MODEL_DIR, exist_ok=True)
 os.makedirs(METADATA_DIR, exist_ok=True)
+
+
+def _parse_args():
+    p = argparse.ArgumentParser(
+        description="Train random forest on CSVs in backend/data."
+    )
+    p.add_argument(
+        "ticker",
+        nargs="?",
+        default=None,
+        help="Stock symbol (use with period to train a single file, e.g. AAPL 1y)",
+    )
+    p.add_argument(
+        "period",
+        nargs="?",
+        default=None,
+        help="Time range matching CSV suffix from data_collector (e.g. 1mo, 1y)",
+    )
+    return p.parse_args()
+
+
+def _csv_files_to_process(ticker: Optional[str], period: Optional[str]) -> list[str]:
+    if (ticker is None) ^ (period is None):
+        raise SystemExit("Provide both ticker and period, or neither.")
+
+    if ticker and period:
+        name = f"{ticker}_{period}.csv"
+        path = os.path.join(DATA_DIR, name)
+        if not os.path.isfile(path):
+            print(f"No data file found: {name}. Skipping.")
+            return []
+        return [name]
+
+    return sorted(f for f in os.listdir(DATA_DIR) if f.endswith(".csv"))
+
+
+_args = _parse_args()
+_csv_list = _csv_files_to_process(_args.ticker, _args.period)
 
 
 def engineer_features(close_frame: pd.DataFrame) -> pd.DataFrame:
@@ -69,7 +109,7 @@ def directional_accuracy(
     return float(np.mean(np.sign(pred_move) == np.sign(actual_move)))
 
 
-for file_name in os.listdir(DATA_DIR):
+for file_name in _csv_list:
     if not file_name.endswith(".csv"):
         continue
 
@@ -131,7 +171,9 @@ for file_name in os.listdir(DATA_DIR):
             "Naive": naive_predictions,
         }
     )
-    predictions_path = os.path.join(METADATA_DIR, f"{ticker}_predictions.csv")
+    predictions_path = os.path.join(
+        METADATA_DIR, f"{ticker}_random_forest_predictions.csv"
+    )
     predictions_df.to_csv(predictions_path, index=False)
     print(f"Predictions saved as {predictions_path}")
 
